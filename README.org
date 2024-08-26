@@ -1,0 +1,29 @@
+#+title: Rajiko
+* About
+Listen to [[https://radiko.jp/][rajiko]] outside Japan (based on [[https://github.com/jackyzy823/rajiko][jackyzy823/rajiko]] project),
+with radio list and download functions (based on [[https://github.com/uru2/radish][uru2/radish]] project).
+
+This is rewritten in Common Lisp, aiming to provide a simple
+interface for rajiko (since I don't use Chrome and not familiar
+to Japanese Katakana UI yet).
+
+Currently is (almost) done, but with a buggy and unstable interface,
+also, plenty hidden bugs. But I think it is some kind usable.
+
+If you just want to use it, download it and place it to where your
+ASDF system could found, and use SBCL to load it:
+
+#+begin_src shell
+  sbcl --eval "(ql:quickload 'rajiko)" \
+       --eval "(rajiko.ui::rajiko-cli)" \
+       --eval "(quit)"
+#+end_src
+
+Or you could compile it like this on SBCL:
+
+#+begin_src shell
+  sbcl --eval "(ql:quickload :rajiko)" \
+       --eval "(sb-ext:save-lisp-and-die \"rajiko\" :compression t :executable t :toplevel #'rajiko:rajiko-cli)"
+#+end_src
+
+Having fun. 
