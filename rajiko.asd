@@ -2,7 +2,7 @@
   :author ("凉凉")
   :version "0"
   :description "This is a package to listen Rajiko in CLI. "
-  :depends-on (dexador plump clss str qbase64 cl-tui)
+  :depends-on (dexador plump clss str qbase64 cl-tui cl-setlocale)
   :serial t
   :components
   ((:module statics

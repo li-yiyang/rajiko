@@ -172,6 +172,9 @@
       (rajiko-pause *rajiko*))))
 
 (defun %rajiko-cli ()
+  ;; cl-charm support Japanese Characters, using
+  ;; https://mhkoji.hatenablog.com/entry/2021/12/18/160043
+  (cl-setlocale:set-all-to-native)
   (update-rajiko-client)
   (with-screen ()
     (refresh)
