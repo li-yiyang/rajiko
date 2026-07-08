@@ -22,6 +22,8 @@
 	       :reader  rajiko-station-ascii-name)
    (region     :initarg :region
 	       :reader  rajiko-station-region)
+   (area-id    :initarg :area-id
+	       :reader  rajiko-station-area-id)
    (logo       :initarg :logo
 	       :reader  rajiko-station-logo)
    (banner     :initarg :banner
@@ -52,11 +54,12 @@
 Return a `rajiko-station' object. "
   (macrolet ((xml-slot (xml tag)
 	       `(aref (clss:select ,tag ,xml) 0)))
-    (let ((id         (plump:text (xml-slot xml "id")))
+      (let ((id         (plump:text (xml-slot xml "id")))
 	  (name       (plump:text (xml-slot xml "name")))
 	  (ascii-name (plump:text (xml-slot xml "ascii_name")))
 	  ;; region will be later assigned, see
 	  ;; `%xml-to-region' function
+	  (area-id    (plump:text (xml-slot xml "area_id")))
 	  (logo       (plump:text (xml-slot xml "logo")))
 	  (banner     (plump:text (xml-slot xml "banner")))
 	  (href       (plump:text (xml-slot xml "href"))))
@@ -64,6 +67,7 @@ Return a `rajiko-station' object. "
 		     :id         id
 		     :name       name
 		     :ascii-name ascii-name
+		     :area-id    area-id
 		     :logo       logo
 		     :banner     banner
 		     :href       href))))
@@ -113,8 +117,32 @@ Return a `rajiko-region' object. "
 		   region)))
 	 regions)))
 
+(defparameter *all-stations* nil
+  "Alist of (station-id . rajiko-station) for all stations across all regions.
+   Sorted alphabetically by station ID.")
+
+(defun %build-all-stations ()
+  (let ((table (make-hash-table :test 'equal)))
+    (maphash (lambda (region-id region)
+               (declare (ignore region-id))
+               (maphash (lambda (station-id station)
+                          (setf (gethash station-id table) station))
+                        (rajiko-region-stations region)))
+             +rajiko-regions+)
+    (let ((result nil))
+      (maphash (lambda (id station) (push (cons id station) result)) table)
+      (setf *all-stations* (sort result #'string-lessp :key #'car)))))
+
 (with-open-file (station-xml (find-statics statics "rajiko-stations.xml"))
   (%update-rajiko-station station-xml))
+
+(%build-all-stations)
+
+(defun area-code-to-area-name (jp-code)
+  "Convert JPxx area code to prefecture name, e.g. JP13 -> \"東京\""
+  (let ((idx (1- (parse-integer (subseq jp-code 2)))))
+    (when (and (>= idx 0) (< idx (length +coordinates-alist+)))
+      (first (nth idx +coordinates-alist+)))))
 
 (defun rajiko-stations-refresh ()
   "Update `+rajiko-regions+' infomation. "

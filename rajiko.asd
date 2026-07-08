@@ -1,8 +1,10 @@
+(in-package :asdf-user)
+
 (asdf:defsystem #:rajiko
   :author ("凉凉")
   :version "0"
   :description "This is a package to listen Rajiko in CLI. "
-  :depends-on (dexador plump clss str qbase64 cl-tui cl-setlocale)
+   :depends-on (local-time dexador plump clss str qbase64 cl-tui cl-setlocale)
   :serial t
   :components
   ((:module statics
@@ -22,12 +24,28 @@
      (:module "backend"
       :pathname "backend"
       :components
-      ((:file "statics")
-       (:file "station")
-       (:file "rajiko")))
+       ((:file "statics")
+        (:file "station")
+        (:file "config")
+        (:file "rajiko")))
      ;; ui
      (:module "ui"
       :pathname "ui"
       :components
       ((:file "ncurses")))
-     ))))
+      ))))
+
+(asdf:defsystem #:rajiko/test
+  :depends-on (#:rajiko #:fiveam)
+  :perform (test-op (o s)
+             (symbol-call :fiveam :run!
+                          (find-symbol* :rajiko-suite :rajiko.test)))
+  :components
+  ((:module "test"
+    :pathname "test"
+    :components
+    ((:file "package")
+     (:file "config")
+     (:file "rajiko")
+     (:file "station")
+     (:file "integration")))))

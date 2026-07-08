@@ -51,7 +51,7 @@
 
 (defmethod make-rajiko (area)
   "Make a Rajiko client for Radiko. "
-  (assert (member area +coordinates-alist+ :key #'first))
+  (assert (member area +coordinates-alist+ :key #'first :test #'equal))
   (make-instance 'rajiko :area area))
 
 (defmethod print-object ((rajiko rajiko) stream)
@@ -71,7 +71,7 @@
 	    user-id     (gen-random-userid)
 	    user-agent  (concat "Dalvik/2.1.0 (Linux; U; Android "
 				version "; " model "/" build ")")
-	    device      (concat sdk "." model)
+	    device      (concat (format nil "~A" sdk) "." model)
 	    location    (gen-GPS area)))
       ;; if dummy, will not auth
       (unless dummy
@@ -113,6 +113,14 @@
 			    ("X-Radiko-Partialkey"  . ,partial-key)))
       (values response http-code))))
 
+(defmethod rajiko-re-auth ((rajiko rajiko) new-area)
+  (assert (member new-area +coordinates-alist+ :key #'first :test #'equal))
+  (with-slots (area location) rajiko
+    (setf area    new-area
+          location (gen-GPS new-area)))
+  (auth rajiko)
+  (rajiko-token rajiko))
+
 (defmethod rajiko-play ((rajiko rajiko) (station rajiko-station))
   (with-slots (player) rajiko
     (when player (rajiko-pause rajiko))
@@ -139,3 +147,132 @@
   (with-slots (player) rajiko
     (if (and player (uiop:process-alive-p player))
 	:playing :paused)))
+
+(defun rajiko-ts-playlist (station ft to &optional (lt 15))
+  "Construct and return the timeshift M3U8 playlist URL."
+  (format nil "https://radiko.jp/v2/api/ts/playlist.m3u8?station_id=~A&ft=~D&to=~D&l=~D"
+          (rajiko-station-id station) ft to lt))
+
+(defmethod rajiko-ts-play ((rajiko rajiko) (station rajiko-station) ft to &key (lt 15))
+  (with-slots (player) rajiko
+    (when player (rajiko-pause rajiko))
+    (setf player
+	  (uiop:launch-program `("ffplay"
+				 "-v" "0"
+				 "-headers" ,(concat "X-Radiko-AuthToken: "
+						     (rajiko-token rajiko))
+				 "-i" ,(rajiko-ts-playlist station ft to lt)
+				 "-nodisp")))))
+
+(defun get-unix-time ()
+  (- (get-universal-time) 2208988800))
+
+(defun station-regions (station)
+  "Return list of regions that broadcast STATION."
+  (let ((station-id (rajiko-station-id station))
+        (result nil))
+    (maphash (lambda (id region)
+               (declare (ignore id))
+               (when (gethash station-id (rajiko-region-stations region))
+                 (push region result)))
+             +rajiko-regions+)
+    result))
+
+(defun yyyymmddhhmmss-to-unix (timestamp)
+  "Convert YYYYMMDDHHmmss integer to Unix timestamp."
+  (let* ((str (format nil "~14,'0D" timestamp))
+         (y (parse-integer (subseq str 0 4)))
+         (m (parse-integer (subseq str 4 6)))
+         (d (parse-integer (subseq str 6 8)))
+         (hh (parse-integer (subseq str 8 10)))
+         (mm (parse-integer (subseq str 10 12)))
+         (ss (parse-integer (subseq str 12 14))))
+    (- (encode-universal-time ss mm hh d m y) 2208988800)))
+
+(defun area-name-to-id (area-name)
+  (let ((index (position area-name +coordinates-alist+ :key #'car :test #'equal)))
+    (when index
+      (format nil "JP~2,'0D" (1+ index)))))
+
+(defun timeshift-programs (station area &optional date)
+  (declare (ignore area))
+  (let* ((station-id (rajiko-station-id station))
+         (date-str (or date
+                       (multiple-value-bind (y m d)
+                           (decode-universal-time (get-universal-time))
+                         (format nil "~4,'0D~2,'0D~2,'0D" y m d))))
+         (url (format nil "https://radiko.jp/v3/program/station/date/~A/~A.xml"
+                      date-str station-id))
+         (xml (handler-case (plump:parse (dex:get url))
+                (error () (return-from timeshift-programs nil))))
+         (stations (clss:select "stations station" xml)))
+    (loop for station-node in (map 'list #'identity stations)
+          when (string= (plump:text (aref (clss:select "id" station-node) 0))
+                        station-id)
+            append (loop for prog in (map 'list #'identity
+                                          (clss:select "scd prog" station-node))
+                         for ft = (parse-integer (plump:attribute prog "ft"))
+                         for to = (parse-integer (plump:attribute prog "to"))
+                         for ftl = (plump:attribute prog "ftl")
+                         for tol = (plump:attribute prog "tol")
+                         for title = (plump:text (aref (clss:select "title" prog) 0))
+                         for desc = (plump:text (aref (clss:select "desc" prog) 0))
+                         for pfm = (plump:text (aref (clss:select "pfm" prog) 0))
+                         collect (list :ft ft :to to
+                                       :ftl ftl :tol tol
+                                       :title title
+                                       :desc desc
+                                       :pfm pfm)))))
+
+(defun todays-date-string ()
+  "Return today's date as YYYYMMDD string using local-time."
+  (let ((now (local-time:now)))
+    (format nil "~4,'0D~2,'0D~2,'0D"
+            (local-time:timestamp-year now)
+            (local-time:timestamp-month now)
+            (local-time:timestamp-day now))))
+
+(defun program-today (station)
+  (let* ((station-id (rajiko-station-id station))
+         (date-str (todays-date-string))
+         (url (format nil "https://radiko.jp/v3/program/station/date/~A/~A.xml"
+                      date-str station-id))
+         (xml (handler-case (plump:parse (dex:get url))
+                (error () (return-from program-today nil))))
+         (stations-node (ignore-errors
+                          (aref (clss:select "stations station" xml) 0))))
+    (when stations-node
+      (loop for prog in (map 'list #'identity (clss:select "scd prog" stations-node))
+            for ft = (parse-integer (plump:attribute prog "ft"))
+            for to = (parse-integer (plump:attribute prog "to"))
+            for ftl = (plump:attribute prog "ftl")
+            for tol = (plump:attribute prog "tol")
+            for title = (plump:text (aref (clss:select "title" prog) 0))
+            for desc = (plump:text (aref (clss:select "desc" prog) 0))
+            for pfm = (plump:text (aref (clss:select "pfm" prog) 0))
+            collect (list :ft ft :to to
+                          :ftl ftl :tol tol
+                          :title title
+                          :desc desc
+                          :pfm pfm)))))
+
+(defun current-program-name (station area)
+  (let* ((area-id (area-name-to-id area))
+         (now (get-unix-time))
+         (date-str (todays-date-string))
+         (url (format nil "https://radiko.jp/v3/program/date/~A/~A.xml" date-str area-id))
+         (xml (handler-case (plump:parse (dex:get url))
+                (error () (return-from current-program-name nil))))
+         (station-id (rajiko-station-id station))
+         (stations (clss:select "stations station" xml)))
+    (loop for station-node in (map 'list #'identity stations)
+          when (string= (plump:text (aref (clss:select "id" station-node) 0))
+                        station-id)
+            do (loop for prog in (map 'list #'identity
+                                      (clss:select "scd prog" station-node))
+                     for ft = (parse-integer (plump:attribute prog "ft"))
+                     for to = (parse-integer (plump:attribute prog "to"))
+                     when (and (<= (yyyymmddhhmmss-to-unix ft) now)
+              (< now (yyyymmddhhmmss-to-unix to)))
+                       do (return-from current-program-name
+                            (plump:text (aref (clss:select "title" prog) 0)))))))
