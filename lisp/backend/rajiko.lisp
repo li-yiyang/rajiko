@@ -210,7 +210,7 @@
           when (string= (plump:text (aref (clss:select "id" station-node) 0))
                         station-id)
             append (loop for prog in (map 'list #'identity
-                                          (clss:select "scd prog" station-node))
+                                          (clss:select "progs prog" station-node))
                          for ft = (parse-integer (plump:attribute prog "ft"))
                          for to = (parse-integer (plump:attribute prog "to"))
                          for ftl = (plump:attribute prog "ftl")
@@ -242,37 +242,34 @@
          (stations-node (ignore-errors
                           (aref (clss:select "stations station" xml) 0))))
     (when stations-node
-      (loop for prog in (map 'list #'identity (clss:select "scd prog" stations-node))
-            for ft = (parse-integer (plump:attribute prog "ft"))
-            for to = (parse-integer (plump:attribute prog "to"))
-            for ftl = (plump:attribute prog "ftl")
-            for tol = (plump:attribute prog "tol")
-            for title = (plump:text (aref (clss:select "title" prog) 0))
-            for desc = (plump:text (aref (clss:select "desc" prog) 0))
-            for pfm = (plump:text (aref (clss:select "pfm" prog) 0))
-            collect (list :ft ft :to to
-                          :ftl ftl :tol tol
-                          :title title
-                          :desc desc
-                          :pfm pfm)))))
+      (loop for prog in (map 'list #'identity (clss:select "progs prog" stations-node))
+             for ft = (parse-integer (plump:attribute prog "ft"))
+             for to = (parse-integer (plump:attribute prog "to"))
+             for ftl = (plump:attribute prog "ftl")
+             for tol = (plump:attribute prog "tol")
+             for title = (plump:text (aref (clss:select "title" prog) 0))
+             for desc = (plump:text (aref (clss:select "desc" prog) 0))
+             for pfm = (plump:text (aref (clss:select "pfm" prog) 0))
+             collect (list :ft ft :to to
+                           :ftl ftl :tol tol
+                           :title title
+                           :desc desc
+                           :pfm pfm)))))
 
-(defun current-program-name (station area)
-  (let* ((area-id (area-name-to-id area))
-         (now (get-unix-time))
+(defun current-program-name (station)
+  (let* ((now (get-unix-time))
          (date-str (todays-date-string))
-         (url (format nil "https://radiko.jp/v3/program/date/~A/~A.xml" date-str area-id))
+         (url (format nil "https://radiko.jp/v3/program/station/date/~A/~A.xml"
+                      date-str (rajiko-station-id station)))
          (xml (handler-case (plump:parse (dex:get url))
                 (error () (return-from current-program-name nil))))
-         (station-id (rajiko-station-id station))
-         (stations (clss:select "stations station" xml)))
-    (loop for station-node in (map 'list #'identity stations)
-          when (string= (plump:text (aref (clss:select "id" station-node) 0))
-                        station-id)
-            do (loop for prog in (map 'list #'identity
-                                      (clss:select "scd prog" station-node))
-                     for ft = (parse-integer (plump:attribute prog "ft"))
-                     for to = (parse-integer (plump:attribute prog "to"))
-                     when (and (<= (yyyymmddhhmmss-to-unix ft) now)
-              (< now (yyyymmddhhmmss-to-unix to)))
-                       do (return-from current-program-name
-                            (plump:text (aref (clss:select "title" prog) 0)))))))
+         (stations-node (ignore-errors
+                          (aref (clss:select "stations station" xml) 0))))
+    (when stations-node
+      (loop for prog in (map 'list #'identity (clss:select "progs prog" stations-node))
+            for ft = (parse-integer (plump:attribute prog "ft"))
+            for to = (parse-integer (plump:attribute prog "to"))
+            when (and (<= (yyyymmddhhmmss-to-unix ft) now)
+                      (< now (yyyymmddhhmmss-to-unix to)))
+              do (return-from current-program-name
+                   (plump:text (aref (clss:select "title" prog) 0)))))))
