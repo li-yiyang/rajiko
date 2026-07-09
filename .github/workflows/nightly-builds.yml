@@ -77,7 +77,10 @@ jobs:
                --non-interactive \
                --load "$HOME/quicklisp/setup.lisp" \
                --eval "(ql:quickload :rajiko)" \
-               --eval '(sb-ext:save-lisp-and-die "rajiko-macos" :compression t :executable t :toplevel (quote rajiko:rajiko-cli))'
+               --eval "(asdf:make :rajiko)"
+
+      - name: Pack binary
+        run: tar czvf rajiko-macos.tar.gz -C bin .
 
       - name: Upload artifact (macOS)
         uses: softprops/action-gh-release@v2
@@ -85,7 +88,7 @@ jobs:
           tag_name: nightly-${{ github.run_id }}
           name: rajiko Nightly Build
           prerelease: true
-          files: rajiko-macos
+          files: rajiko-macos.tar.gz
           body: |
             Automated nightly build of rajiko.
 
@@ -124,7 +127,10 @@ jobs:
           sbcl --non-interactive \
                --load "$HOME/quicklisp/setup.lisp" \
                --eval "(ql:quickload :rajiko)" \
-               --eval '(sb-ext:save-lisp-and-die "rajiko-linux" :compression t :executable t :toplevel (quote rajiko:rajiko-cli))'
+               --eval "(asdf:make :rajiko)"
+
+      - name: Pack binary
+        run: tar czvf rajiko-linux.tar.gz -C bin .
 
       - name: Upload artifact (Linux)
         uses: softprops/action-gh-release@v2
@@ -132,7 +138,7 @@ jobs:
           tag_name: nightly-${{ github.run_id }}
           name: rajiko Nightly Build
           prerelease: true
-          files: rajiko-linux
+          files: rajiko-linux.tar.gz
           body: |
             Automated nightly build of rajiko.
 
