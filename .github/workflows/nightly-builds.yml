@@ -1,0 +1,132 @@
+# Credits:
+# This CI workflow is adapted from
+# https://github.com/li-yiyang/McCLIM-Coca.app
+# .github/workflows/nightly-builds.yml
+name: Nightly Builds
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Build even if no new commits'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check for changes
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.diff.outputs.skip }}
+    steps:
+      - name: Check changes since last nightly
+        id: diff
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.force_build }}" == "true" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            COMMIT_COUNT=$(git log --since="24 hours ago" --oneline | wc -l)
+            if [ "$COMMIT_COUNT" -gt 0 ]; then
+              echo "skip=false" >> $GITHUB_OUTPUT
+            else
+              echo "skip=true"  >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  mac:
+    name: Nightly Build (macOS)
+    needs: check
+    if: needs.check.outputs.skip != 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Common Lisp environment
+        run: |
+          brew install li-yiyang/sbcl-goodies/sbcl-goodies
+          curl -O https://beta.quicklisp.org/quicklisp.lisp
+          sbcl-goodies \
+               --non-interactive \
+               --load quicklisp.lisp \
+               --eval "(quicklisp-quickstart:install)" \
+               --eval "(ql:update-all-dists)"
+
+      - name: Build rajiko
+        run: |
+          sbcl-goodies \
+               --non-interactive \
+               --load "$HOME/quicklisp/setup.lisp" \
+               --eval "(ql:quickload :rajiko)" \
+               --eval '(sb-ext:save-lisp-and-die "rajiko-macos" :compression t :executable t :toplevel (quote rajiko:rajiko-cli))'
+
+      - name: Upload artifact (macOS)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.run_id }}
+          name: rajiko Nightly Build
+          prerelease: true
+          files: rajiko-macos
+          body: |
+            Automated nightly build of rajiko.
+
+            Built with homebrew tap SBCL-Goodies ([li-yiyang/sbcl-goodies](https://github.com/li-yiyang/homebrew-sbcl-goodies)).
+            Last updated ${{ github.event.head_commit.timestamp || 'Manual Trigger' }}.
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux:
+    name: Nightly Build (Linux)
+    needs: check
+    if: needs.check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Common Lisp environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sbcl
+          curl -O https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive \
+               --load quicklisp.lisp \
+               --eval "(quicklisp-quickstart:install)" \
+               --eval "(ql:update-all-dists)"
+
+      - name: Build rajiko
+        run: |
+          sbcl --non-interactive \
+               --load "$HOME/quicklisp/setup.lisp" \
+               --eval "(ql:quickload :rajiko)" \
+               --eval '(sb-ext:save-lisp-and-die "rajiko-linux" :compression t :executable t :toplevel (quote rajiko:rajiko-cli))'
+
+      - name: Upload artifact (Linux)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.run_id }}
+          name: rajiko Nightly Build
+          prerelease: true
+          files: rajiko-linux
+          body: |
+            Automated nightly build of rajiko.
+
+            Last updated ${{ github.event.head_commit.timestamp || 'Manual Trigger' }}.
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
