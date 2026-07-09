@@ -73,10 +73,19 @@ jobs:
 
       - name: Build rajiko
         run: |
+          cat > /tmp/deploy-librt.lisp <<'LISP'
+          ;; On macOS, librt is part of libSystem.B.dylib — not a standalone file.
+          ;; Tell deploy to skip bundling it.
+          #+darwin
+          (progn
+            (deploy:define-library 'osicat-posix::librt :dont-deploy t)
+            (push 'osicat-posix::librt cl-user::*foreign-system-libraries*))
+          LISP
           sbcl-goodies \
                --non-interactive \
                --load "$HOME/quicklisp/setup.lisp" \
                --eval "(ql:quickload :rajiko)" \
+               --load /tmp/deploy-librt.lisp \
                --eval "(asdf:make :rajiko)"
 
       - name: Pack binary
@@ -110,7 +119,7 @@ jobs:
       - name: Set up Common Lisp environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y sbcl
+          sudo apt-get install -y sbcl libncurses-dev
           curl -O https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \
                --load quicklisp.lisp \
