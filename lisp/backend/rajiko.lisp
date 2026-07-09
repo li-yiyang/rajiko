@@ -39,8 +39,8 @@
    (area        :initarg  :area
 		:initform (error "Missing area. ")
 		:reader rajiko-area)
-   (token       :reader rajiko-token)
-   (partial-key :reader rajiko-partial-key)
+   (token       :initform nil :reader rajiko-token)
+   (partial-key :initform nil :reader rajiko-partial-key)
    (location    :reader rajiko-location)
    (player      :initform nil))
   (:documentation
